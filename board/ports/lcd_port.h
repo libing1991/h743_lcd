@@ -10,13 +10,13 @@
 
 #ifndef __LCD_PORT_H__
 #define __LCD_PORT_H__
-
+#define LCD_PIXEL_FORMAT_RGB565         0X02  
 /* atk 4.3 inch screen, 480 * 272 */
 #define LCD_WIDTH           800
 #define LCD_HEIGHT          480
-#define LCD_BITS_PER_PIXEL  24
+#define LCD_BITS_PER_PIXEL  16
 #define LCD_BUF_SIZE        (LCD_WIDTH * LCD_HEIGHT * LCD_BITS_PER_PIXEL / 8)
-#define LCD_PIXEL_FORMAT    RTGRAPHIC_PIXEL_FORMAT_RGB888
+#define LCD_PIXEL_FORMAT    LCD_PIXEL_FORMAT_RGB565
 
 #define LCD_HSYNC_WIDTH     1
 #define LCD_VSYNC_HEIGHT    1

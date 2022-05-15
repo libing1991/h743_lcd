@@ -278,7 +278,7 @@ void HAL_LTDC_MspInit(LTDC_HandleTypeDef* hltdc)
   /* USER CODE END LTDC_MspInit 0 */
     /* Peripheral clock enable */
     __HAL_RCC_LTDC_CLK_ENABLE();
-  
+  __HAL_RCC_DMA2D_CLK_ENABLE();               //Ê¹ÄÜDMA2DÊ±ÖÓ
     __HAL_RCC_GPIOI_CLK_ENABLE();
     __HAL_RCC_GPIOF_CLK_ENABLE();
     __HAL_RCC_GPIOH_CLK_ENABLE();
