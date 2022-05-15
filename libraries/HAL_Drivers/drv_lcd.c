@@ -53,51 +53,6 @@ u32 *ltdc_framebuf[2];
 
 static LTDC_HandleTypeDef LTDC_Handler = {0};
 
-struct drv_lcd_device
-{
-    struct rt_device parent;
-
-    struct rt_device_graphic_info lcd_info;
-
-    struct rt_semaphore lcd_lock;
-
-    /* 0:front_buf is being used 1: back_buf is being used*/
-    rt_uint8_t cur_buf;
-    rt_uint8_t *front_buf;
-    rt_uint8_t *back_buf;
-};
-
-struct drv_lcd_device _lcd;
-
-static rt_err_t drv_lcd_init(struct rt_device *device)
-{
-    struct drv_lcd_device *lcd = LCD_DEVICE(device);
-    /* nothing, right now */
-    lcd = lcd;
-    return RT_EOK;
-}
-
-
-void HAL_LTDC_ReloadEventCallback(LTDC_HandleTypeDef *hltdc)
-{
-    /* emable line interupt */
-    //__HAL_LTDC_ENABLE_IT(&LtdcHandle, LTDC_IER_LIE);
-}
-
-void HAL_LTDC_LineEventCallback(LTDC_HandleTypeDef *hltdc)
-{
-    //rt_sem_release(&_lcd.lcd_lock);
-}
-
-void LTDC_IRQHandler(void)
-{
-//    rt_enter_critical();
-
-//    HAL_LTDC_IRQHandler(&LtdcHandle);
-
-//    rt_exit_critical();
-}
-
 
 //LTDC,层颜窗口设置,窗口以LCD面板坐标系为基准
 //注意:此函数必须在LTDC_Layer_Parameter_Config之后再设置.
@@ -211,7 +166,14 @@ void LTDC_Select_Layer(u8 layerx)
 {
 	lcdltdc.activelayer=layerx;
 }
+void turn_on_lcd_backlight(void)
+{
+    rt_pin_mode(LCD_BL_GPIO_NUM, PIN_MODE_OUTPUT);
+    rt_pin_mode(LCD_DISP_GPIO_NUM, PIN_MODE_OUTPUT);
 
+    rt_pin_write(LCD_DISP_GPIO_NUM, PIN_HIGH);
+    rt_pin_write(LCD_BL_GPIO_NUM, PIN_HIGH);
+}
 rt_err_t stm32_lcd_init(void)
 {
 	u16 lcdid=0;
@@ -224,11 +186,6 @@ rt_err_t stm32_lcd_init(void)
     lcdltdc.vbp=23;				    //垂直后廊
     lcdltdc.hfp=210;			    //水平前廊
     lcdltdc.vfp=22;				    //垂直前廊
-	//LTDC_Clk_Set(5,160,28);			//设置像素时钟 33M(如果开双显,需要降低DCLK到:18.75Mhz  pll3r=43,才会比较好)
-	 
-
-//	lcddev.width=lcdltdc.pwidth;
-//	lcddev.height=lcdltdc.pheight;
 
     lcdltdc.pixsize=2;				//每个像素占2个字节
 	ltdc_framebuf[0]=(u32*)&ltdc_lcd_framebuf;
@@ -258,159 +215,33 @@ rt_err_t stm32_lcd_init(void)
 	 	
  	LTDC_Display_Dir(0);			//默认竖屏
 	LTDC_Select_Layer(0); 			//选择第1层
-    //LCD_LED(1);         		    //点亮背光
-    LTDC_Clear(0xFFFFFFFF);			//清屏 
-    LTDC_Fill(0, 0, 100, 200, 0x7FFF);    
+    LTDC_Clear(0XF81F);			//清屏 
+    LTDC_Fill(0, 0, 100, 200, 0XFC07); 
+    turn_on_lcd_backlight();    //点亮背光
 }
-#if defined(LCD_BACKLIGHT_USING_PWM)
-void turn_on_lcd_backlight(void)
-{
-    struct rt_device_pwm *pwm_dev;
 
-    /* turn on the LCD backlight */
-    pwm_dev = (struct rt_device_pwm *)rt_device_find(LCD_PWM_DEV_NAME);
-    /* pwm frequency:100K = 10000ns */
-    rt_pwm_set(pwm_dev, LCD_PWM_DEV_CHANNEL, 10000, 10000);
-    rt_pwm_enable(pwm_dev, LCD_PWM_DEV_CHANNEL);
-}
-#elif defined(LCD_BACKLIGHT_USING_GPIO)
-void turn_on_lcd_backlight(void)
-{
-    rt_pin_mode(LCD_BL_GPIO_NUM, PIN_MODE_OUTPUT);
-    rt_pin_mode(LCD_DISP_GPIO_NUM, PIN_MODE_OUTPUT);
-
-    rt_pin_write(LCD_DISP_GPIO_NUM, PIN_HIGH);
-    rt_pin_write(LCD_BL_GPIO_NUM, PIN_HIGH);
-}
-#else
-void turn_on_lcd_backlight(void)
-{
-    
-}
-#endif
-
-#ifdef RT_USING_DEVICE_OPS
-const static struct rt_device_ops lcd_ops =
-{
-    drv_lcd_init,
-    RT_NULL,
-    RT_NULL,
-    RT_NULL,
-    RT_NULL,
-    drv_lcd_control
-};
-#endif
 
 //画点函数
 //x,y:坐标
 //color:颜色值
-void LTDC_Draw_Point(uint16_t x,uint16_t y,uint32_t color)
+void LTDC_Draw_Point(u16 x,u16 y,u32 color)
 { 
-
-    *(uint16_t*)((uint32_t)_lcd.front_buf[0]+2*(LCD_WIDTH*y+x))=color;
-
+    *(u16*)((u32)ltdc_framebuf[lcdltdc.activelayer]+lcdltdc.pixsize*(lcdltdc.pwidth*y+x))=color;
 }
 
 //读点函数
 //返回值:颜色值
-uint32_t LTDC_Read_Point(uint16_t x,uint16_t y)
+u32 LTDC_Read_Point(u16 x,u16 y)
 { 
-
-    return *(uint16_t*)((uint32_t)_lcd.front_buf[0]+2*(LCD_WIDTH*(LCD_HEIGHT-x-1)+y)); 
-
+    return *(u16*)((u32)ltdc_framebuf[lcdltdc.activelayer]+lcdltdc.pixsize*(lcdltdc.pwidth*y+x));
 }
 
 
 int drv_lcd_hw_init(void)
 {
+    rt_err_t result = RT_EOK;
     stm32_lcd_init();
-    turn_on_lcd_backlight();
-//   
-//    rt_err_t result = RT_EOK;
-//    struct rt_device *device = &_lcd.parent;
-// 
-//    
-//    
-//    /* memset _lcd to zero */
-//    memset(&_lcd, 0x00, sizeof(_lcd));
-
-//    /* init lcd_lock semaphore */
-//    result = rt_sem_init(&_lcd.lcd_lock, "lcd_lock", 0, RT_IPC_FLAG_FIFO);
-//    if (result != RT_EOK)
-//    {
-//        LOG_E("init semaphore failed!\n");
-//        result = -RT_ENOMEM;
-//        //goto __exit;
-//    }
-
-//    /* config LCD dev info */
-//    _lcd.lcd_info.height = LCD_HEIGHT;
-//    _lcd.lcd_info.width = LCD_WIDTH;
-//    _lcd.lcd_info.bits_per_pixel = LCD_BITS_PER_PIXEL;
-//    _lcd.lcd_info.pixel_format = LCD_PIXEL_FORMAT;
-
-//    /* malloc memory for Triple Buffering */
-//    //_lcd.lcd_info.framebuffer = ltdc_lcd_framebuf;//rt_malloc(LCD_BUF_SIZE);
-//    //_lcd.back_buf = ltdc_lcd_framebuf1;//rt_malloc(LCD_BUF_SIZE);
-//    //_lcd.front_buf = ltdc_lcd_framebuf;//rt_malloc(LCD_BUF_SIZE);
-////    if (_lcd.lcd_info.framebuffer == RT_NULL || _lcd.back_buf == RT_NULL || _lcd.front_buf == RT_NULL)
-////    {
-////        LOG_E("init frame buffer failed!\n");
-////        result = -RT_ENOMEM;
-////        //goto __exit;
-////    }
-
-//    /* memset buff to 0xFF */
-//    //memset(_lcd.lcd_info.framebuffer, 0xFF, LCD_BUF_SIZE);
-//    //memset(_lcd.back_buf, 0xFF, LCD_BUF_SIZE);
-//    //memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE);
-
-//    device->type    = RT_Device_Class_Graphic;
-//#ifdef RT_USING_DEVICE_OPS
-//    device->ops     = &lcd_ops;
-//#else
-//    device->init    = drv_lcd_init;
-//    device->control = NULL;
-//#endif
-
-//    /* register lcd device */
-//    rt_device_register(device, "lcd", RT_DEVICE_FLAG_RDWR);
-
-//    /* init stm32 LTDC */
-//    if (stm32_lcd_init(&_lcd) != RT_EOK)
-//    {
-//        result = -RT_ERROR;
-//        //goto __exit;
-//    }
-//    turn_on_lcd_backlight();
-//    return result;
-////    else
-////    {
-////        turn_on_lcd_backlight();
-////    }
-//    //LTDC_Fill(0, 0, 100, 200, 0xF81F);
-//    
-//__exit:
-//    if (result != RT_EOK)
-//    {
-//        rt_sem_delete(&_lcd.lcd_lock);
-
-//        if (_lcd.lcd_info.framebuffer)
-//        {
-//            rt_free(_lcd.lcd_info.framebuffer);
-//        }
-
-//        if (_lcd.back_buf)
-//        {
-//            rt_free(_lcd.back_buf);
-//        }
-
-//        if (_lcd.front_buf)
-//        {
-//            rt_free(_lcd.front_buf);
-//        }
-//    }
-//    return result;
+    return result;
 }
 INIT_DEVICE_EXPORT(drv_lcd_hw_init);
 
@@ -433,110 +264,14 @@ static void setlcdColor(uint16_t color)
 #ifdef FINSH_USING_MSH
 int lcd_test()
 {
-    struct drv_lcd_device *lcd;
-    lcd = (struct drv_lcd_device *)rt_device_find("lcd");
-    
-    int count = 0;
-    int rgbData = 0;
-    static uint8_t rData = 255;
-    static uint8_t gData = 0;
-    static uint8_t bData = 0;
-    
-    
-//    LTDC_LAYER(&LtdcHandle, 0)->CFBAR &= ~(LTDC_LxCFBAR_CFBADD);
-//    LTDC_LAYER(&LtdcHandle, 0)->CFBAR = (uint32_t)(_lcd.front_buf);
-//    rt_sem_take(&_lcd.lcd_lock, RT_TICK_PER_SECOND / 20);
-//    HAL_LTDC_Relaod(&LtdcHandle, LTDC_SRCR_VBR);
-
-    //while (1)
-    {
-        rgbData = 0;
-        
-        
-        
-//        setlcdColor(0x001F);
-//        rt_thread_mdelay(1000);
-//        setlcdColor(0X07FF);
-//        rt_thread_mdelay(1000);
-//        setlcdColor(0x07E0);
-//        rt_thread_mdelay(1000);
-//        setlcdColor(0xF800);
-//        rt_thread_mdelay(1000);
-//            memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE / 2);
-//            rt_thread_mdelay(1000);
-//        memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE / 3);
-//            rt_thread_mdelay(1000);
-//        memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE / 2);
-//            rt_thread_mdelay(1000);
-//        memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE / 5);
-//            rt_thread_mdelay(1000);
-//        memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE/ 8);
-//            rt_thread_mdelay(1000);
-//        memset(_lcd.front_buf, 0xAA, LCD_BUF_SIZE / 10);
-//            rt_thread_mdelay(1000);
-        
-//        LTDC_Fill(0, 0, 500, 400, 0xF800);
-//        rt_thread_mdelay(1000);
-//        LTDC_Fill(0, 0, 500, 400, 0x001F);
-//        rt_thread_mdelay(1000);
-//        LTDC_Fill(0, 0, 500, 400, 0XFFE0);
-//        rt_thread_mdelay(1000);
-//        LTDC_Fill(0, 0, 500, 400, 0X07FF);
-//        rt_thread_mdelay(1000);
-//        LTDC_Fill(0, 0, 500, 400, 0xFFE0);
-//        rt_thread_mdelay(1000);
-        /* red */
-//        for (int i = 0; i < LCD_BUF_SIZE / 3; i += 3)
-//        {
-//            lcd->front_buf[3 * i] = rData;
-//            lcd->front_buf[3 * i + 1] = gData;
-//            lcd->front_buf[3 * i + 2] = bData;
-//            
-//            
-//            
-//            if(rgbData == 255)
-//            {
-//                rgbData = 0;
-//            }
-//        }
-        //lcd->parent.control(&lcd->parent, RTGRAPHIC_CTRL_RECT_UPDATE, RT_NULL);
-//        rt_thread_mdelay(1000);
-//        /* green */
-//        for (int i = 0; i < LCD_BUF_SIZE / 3; i += 3)
-//        {
-//            lcd->lcd_info.framebuffer[3 * i] = 0;
-//            lcd->lcd_info.framebuffer[3 * i + 1] = 0;
-//            lcd->lcd_info.framebuffer[3 * i + 2] = 0xFF;
-//            
-//            if(rgbData == 255)
-//            {
-//                rgbData = 0;
-//            }
-//        }
-//        lcd->parent.control(&lcd->parent, RTGRAPHIC_CTRL_RECT_UPDATE, RT_NULL);
-//        rt_thread_mdelay(1000);
-//        /* blue */
-//        for (int i = 0; i < LCD_BUF_SIZE / 3; i += 3)
-//        {
-//            lcd->lcd_info.framebuffer[3 * i] = 0;
-//            lcd->lcd_info.framebuffer[3 * i + 1] = 0xFF;
-//            lcd->lcd_info.framebuffer[3 * i + 2] = 0;
-//            
-//            if(rgbData == 255)
-//            {
-//                rgbData = 0;
-//            }
-//        }
-//        lcd->parent.control(&lcd->parent, RTGRAPHIC_CTRL_RECT_UPDATE, RT_NULL);
-//        rt_thread_mdelay(1000);
-        count ++;
-        
-//        if(count == 5)
-//        {
-//            break;
-//        }
-//        rt_thread_mdelay(1000);
-    }
+    setlcdColor(0x001F);
+    rt_thread_mdelay(1000);
+    setlcdColor(0X07FF);
+    rt_thread_mdelay(1000);
+    setlcdColor(0x07E0);
+    rt_thread_mdelay(1000);
+    setlcdColor(0xF800);
+    rt_thread_mdelay(1000);
 }
 MSH_CMD_EXPORT(lcd_test, lcd_test);
 #endif /* FINSH_USING_MSH */
