@@ -59,6 +59,7 @@ static void sdramTest(void)
 static __task void start_task(void)
 {
     INT8U data[1];
+    initcpu();
     
     while(1)
     {
@@ -91,7 +92,7 @@ int main(void)
 //	  led_gpio_config();   			 // led初始化
 //    key_gpio_config(); 				 // key初始化
 //	  usart_gpio_config(9600U);  // 串口0初始化
-	sdramTest();
+//	sdramTest();
     os_sys_init(start_task); 
     while(1) {
 		

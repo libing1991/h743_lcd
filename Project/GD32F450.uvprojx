@@ -617,6 +617,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\xmcu\lib\gdf450\GD32F4xx_standard_peripheral\Source\gd32f4xx_can.c</FilePath>
             </File>
+            <File>
+              <FileName>gd32f4xx_tli.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\xmcu\lib\gdf450\GD32F4xx_standard_peripheral\Source\gd32f4xx_tli.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

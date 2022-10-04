@@ -1,8 +1,23 @@
 #include "cpu.h"
-//#include "gd32f4xx_rcu.h"
-//#include "gd32f4xx_tli.h"
-//#include "gd32f4xx_ipa.h"
+#include "logo.h"
 #include "mcu_gd450.h"
+
+#define LCD_LAYER_BACKGROUND         0x0000
+#define LCD_LAYER_FOREGROUND         0x0001
+
+#define LCD_LINEDIR_HORIZONTAL       0x0000
+#define LCD_LINEDIR_VERTICAL         0x0001
+
+#define LCD_FRAME_BUFFER             ((uint32_t)0xC0000000)
+#define BUFFER_OFFSET                ((uint32_t)(LCD_PIXEL_WIDTH*LCD_PIXEL_HEIGHT * 4))
+
+#define LCD_PIXEL_WIDTH              ((uint16_t)480)
+#define LCD_PIXEL_HEIGHT             ((uint16_t)272)
+
+static uint16_t current_textcolor = 0x0000;
+static uint16_t current_backcolor = 0xFFFF;
+static uint32_t current_framebuffer = LCD_FRAME_BUFFER;
+static uint32_t current_layer = LCD_LAYER_BACKGROUND;
 
 
 /* SDRAM Defininations */
@@ -266,9 +281,69 @@ void SDRAMInit(void)
     }
 }
 
+void initLcdPort(void)
+{
+    
+	/* configure HSYNC(PC6), VSYNC(PA4), PCLK(PG7), DE(PF10) */
+    /* configure LCD_R7(PG6), LCD_R6(PA8), LCD_R5(PA12), LCD_R4(PA11), LCD_R3(PB0), 
+                 LCD_G7(PD3), LCD_G6(PC7), LCD_G5(PB11), LCD_G4(PB10), LCD_G3(PG10), LCD_G2(PA6),
+                 LCD_B7(PB9), LCD_B6(PB8), LCD_B5(PA3), LCD_B4(PG12), LCD_B3(PG11) */
+    gpio_af_set(GPIOA,GPIO_AF_14,GPIO_PIN_3);  
+    gpio_af_set(GPIOA,GPIO_AF_14,GPIO_PIN_4);
+    gpio_af_set(GPIOA,GPIO_AF_14,GPIO_PIN_6);  
+    gpio_af_set(GPIOA,GPIO_AF_14,GPIO_PIN_12); 
+    gpio_af_set(GPIOA,GPIO_AF_14,GPIO_PIN_11);  
+    gpio_af_set(GPIOA,GPIO_AF_14,GPIO_PIN_8); 
+    gpio_af_set(GPIOB,GPIO_AF_9,GPIO_PIN_0);  
+    gpio_af_set(GPIOB,GPIO_AF_14,GPIO_PIN_10);     
+    gpio_af_set(GPIOB,GPIO_AF_14,GPIO_PIN_11);
+    gpio_af_set(GPIOB,GPIO_AF_14,GPIO_PIN_8);     
+    gpio_af_set(GPIOB,GPIO_AF_14,GPIO_PIN_9);
+    gpio_af_set(GPIOC,GPIO_AF_14,GPIO_PIN_6);     
+    gpio_af_set(GPIOC,GPIO_AF_14,GPIO_PIN_7);
+    gpio_af_set(GPIOD,GPIO_AF_14,GPIO_PIN_3);     
+    gpio_af_set(GPIOF,GPIO_AF_14,GPIO_PIN_10);     
+    gpio_af_set(GPIOG,GPIO_AF_14,GPIO_PIN_6);     
+    gpio_af_set(GPIOG,GPIO_AF_14,GPIO_PIN_7);
+    gpio_af_set(GPIOG,GPIO_AF_9,GPIO_PIN_10);
+    gpio_af_set(GPIOG,GPIO_AF_14,GPIO_PIN_11);     
+    gpio_af_set(GPIOG,GPIO_AF_9,GPIO_PIN_12);    
+
+    gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_4|GPIO_PIN_3|GPIO_PIN_6
+    |GPIO_PIN_8|GPIO_PIN_11|GPIO_PIN_12);
+    gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ,GPIO_PIN_4|GPIO_PIN_3
+    |GPIO_PIN_6|GPIO_PIN_8|GPIO_PIN_11|GPIO_PIN_12);
+    gpio_mode_set(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_0|GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10
+    |GPIO_PIN_11);
+    gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_0|GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10
+    |GPIO_PIN_11);
+    gpio_mode_set(GPIOC, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_6|GPIO_PIN_7);
+    gpio_output_options_set(GPIOC, GPIO_OTYPE_PP,GPIO_OSPEED_50MHZ, GPIO_PIN_6|GPIO_PIN_7);
+    gpio_mode_set(GPIOD, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_3);
+    gpio_output_options_set(GPIOD, GPIO_OTYPE_PP,GPIO_OSPEED_50MHZ, GPIO_PIN_3);
+    gpio_mode_set(GPIOF, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_10);
+    gpio_output_options_set(GPIOF, GPIO_OTYPE_PP,GPIO_OSPEED_50MHZ, GPIO_PIN_10);
+    gpio_mode_set(GPIOG, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_10|GPIO_PIN_11
+    |GPIO_PIN_12);
+    gpio_output_options_set(GPIOG, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ,GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_10|GPIO_PIN_11
+    |GPIO_PIN_12);
+}
+
 static void initPort(void)
 {
     setPortPinDir(3 , 7 , 0 , 0);
+    
+    //LCD
+    initLcdPort();
+    
+    //BL_CL
+    setPortPinDir(3 , 13 , 0 , 0);
+    
+}
+
+void setLcdBlState(BOOLEAN state)
+{
+    setPortPinState(3, 13, state);
 }
 void setPortPinState(INT8U enPort , INT8U number , BOOLEAN state)
 {
@@ -331,8 +406,203 @@ static void initClock(void)
 }
 
 
+/*!
+    \brief      set the transparency of LCD
+    \param[in]  trans: transparency of LCD, from 0 to 255
+    \param[out] none
+    \retval     none
+*/
+void lcd_transparency_set(uint8_t trans)
+{
+    if (LCD_LAYER_BACKGROUND == current_layer){
+        TLI_LxSA(LAYER0) &= ~(TLI_LxSA_SA);
+        TLI_LxSA(LAYER0) = trans;
+    }else{
+        TLI_LxSA(LAYER1) &= ~(TLI_LxSA_SA);
+        TLI_LxSA(LAYER1) = trans;
+    }
+    tli_reload_config(TLI_REQUEST_RELOAD_EN);
+}
+
+/**
+    \brief      configure the packeted pixel format
+    \param[in]  pixel_format: pixel format
+      \arg        LAYER_PPF_ARGB8888
+      \arg        LAYER_PPF_RGB888
+      \arg        LAYER_PPF_RGB565
+      \arg        LAYER_PPF_ARGB1555
+      \arg        LAYER_PPF_ARGB4444
+      \arg        LAYER_PPF_L8
+      \arg        LAYER_PPF_AL44
+      \arg        LAYER_PPF_AL88
+    \param[out] none
+    \retval     none
+*/
+void lcd_pixel_format_config(uint32_t pixel_format)
+{
+    if(LCD_LAYER_BACKGROUND == current_layer){
+        TLI_LxPPF(LAYER0) &= ~(TLI_LxPPF_PPF);
+        TLI_LxPPF(LAYER0) = pixel_format;
+    }else{
+        TLI_LxPPF(LAYER1) &= ~(TLI_LxPPF_PPF);
+        TLI_LxPPF(LAYER1) = pixel_format;
+    }
+}
+
+/*!
+    \brief      configure the frame buffer base address
+    \param[in]  address: frame buffer base address
+    \param[out] none
+    \retval     none
+*/
+void lcd_address_config(uint32_t address)
+{
+    if (LCD_LAYER_BACKGROUND == current_layer){
+        TLI_LxFBADDR(LAYER0) &= ~(TLI_LxFBADDR_FBADD);
+        TLI_LxFBADDR(LAYER0) = address;
+    }else{
+        TLI_LxFBADDR(LAYER1) &= ~(TLI_LxFBADDR_FBADD);
+        TLI_LxFBADDR(LAYER1) = address;
+    }
+
+    tli_reload_config(TLI_REQUEST_RELOAD_EN);
+}
+
+/*!
+    \brief      clear the LCD with specified color
+    \param[in]  color: LCD color
+      \arg        LCD_COLOR_WHITE
+      \arg        LCD_COLOR_BLACK
+      \arg        LCD_COLOR_GREY
+      \arg        LCD_COLOR_BLUE
+      \arg        LCD_COLOR_BLUE2
+      \arg        LCD_COLOR_RED
+      \arg        LCD_COLOR_MAGENTA
+      \arg        LCD_COLOR_GREEN
+      \arg        LCD_COLOR_CYAN
+      \arg        LCD_COLOR_YELLOW
+    \param[out] none
+    \retval     none
+*/
+void lcd_clear(uint16_t color)
+{
+    uint32_t index = 0;
+    for (index = 0x00; index < BUFFER_OFFSET; index++){
+        *(__IO uint16_t*)(current_framebuffer + (2*index)) = color;
+    }
+}
+/**
+    \brief      initialize the LCD GPIO and TLI
+    \param[in]  none
+    \param[out] none
+    \retval     none
+*/
+void lcd_init(void)
+{
+    tli_parameter_struct  tli_init_struct;
+	tli_layer_parameter_struct  tli_layer_init_struct;
+
+    /* configure the PLLSAI clock to generate lcd clock */
+    if(ERROR == rcu_pllsai_config(256, 2, 3))
+	{
+        while(1);
+    }
+    rcu_tli_clock_div_config(RCU_PLLSAIR_DIV8);
+    rcu_osci_on(RCU_PLLSAI_CK);
+    if(ERROR == rcu_osci_stab_wait(RCU_PLLSAI_CK))
+	{
+        while(1);
+    }
+
+//	SDRAMInit();
+	
+    /* TLI initialization */
+    tli_init_struct.signalpolarity_hs = TLI_HSYN_ACTLIVE_LOW;
+    tli_init_struct.signalpolarity_vs = TLI_VSYN_ACTLIVE_LOW;
+    tli_init_struct.signalpolarity_de = TLI_DE_ACTLIVE_LOW;
+    tli_init_struct.signalpolarity_pixelck = TLI_PIXEL_CLOCK_TLI;
+
+    /* LCD display timing configuration */
+	tli_init_struct.synpsz_hpsz = 43 - 1;
+	tli_init_struct.synpsz_vpsz = 12 - 1;
+	tli_init_struct.backpsz_hbpsz = 43 + 2 - 1;
+	tli_init_struct.backpsz_vbpsz = 12 + 2 - 1;
+	tli_init_struct.activesz_hasz = 43 + 2 + 480 - 1;
+	tli_init_struct.activesz_vasz = 12 + 2 + 272 - 1;
+	tli_init_struct.totalsz_htsz = 43 + 2 + 480 + 2 - 1;
+	tli_init_struct.totalsz_vtsz = 12 + 2 + 272 + 2 - 1;
+	
+    /* LCD background color configure*/
+    tli_init_struct.backcolor_red     = 0xFF;
+    tli_init_struct.backcolor_green   = 0xFF;
+    tli_init_struct.backcolor_blue    = 0xFF;
+    tli_init(&tli_init_struct);
+	
+	/* TLI layer0 configuration */
+	tli_layer_init_struct.layer_window_leftpos = 43 + 2;
+	tli_layer_init_struct.layer_window_rightpos = (480 + 43 + 2 - 1); 
+	tli_layer_init_struct.layer_window_toppos = 12;						//10 + 2
+	tli_layer_init_struct.layer_window_bottompos = (272 + 12 + 2 - 1);	
+	tli_layer_init_struct.layer_ppf = LAYER_PPF_RGB565;
+	tli_layer_init_struct.layer_sa = 0xFF;
+	tli_layer_init_struct.layer_default_blue = 0xFF;        
+	tli_layer_init_struct.layer_default_green = 0xFF;       
+	tli_layer_init_struct.layer_default_red = 0xFF;
+	tli_layer_init_struct.layer_default_alpha = 0X0;
+	tli_layer_init_struct.layer_acf1 = LAYER_ACF1_PASA;
+	tli_layer_init_struct.layer_acf2 = LAYER_ACF2_PASA;
+	//tli_layer_init_struct.layer_frame_bufaddr = (uint32_t)&gImage_Image_RGB565;
+	tli_layer_init_struct.layer_frame_bufaddr = (uint32_t)LCD_FRAME_BUFFER;
+	tli_layer_init_struct.layer_frame_line_length = ((480 * 2) + 3);
+	tli_layer_init_struct.layer_frame_buf_stride_offset = (480 * 2);
+	tli_layer_init_struct.layer_frame_total_line_number = 272; 
+	tli_layer_init(LAYER0, &tli_layer_init_struct);
+	
+	 /* enable layer0 and layer1 */
+	tli_layer_enable(LAYER0);
+	tli_reload_config(TLI_REQUEST_RELOAD_EN);
+    //lcd_font_set(&LCD_DEFAULT_FONT);
+    tli_dither_config(TLI_DITHER_DISABLE);
+	tli_enable();
+	
+	current_framebuffer = LCD_FRAME_BUFFER;
+	current_layer = LCD_LAYER_BACKGROUND;
+}
+
+
+/**
+    @brief      向SDRAM内写一组字符
+    @param[in]  pbuffer: 要装填数组的指针
+	@param[in]  writeaddr: 选择SDRAM的内部地址
+	@param[in]  value: value to fill on the buffer
+    @param[out] none
+    @retval     none
+*/
+void sdram_writebuffer_8(uint8_t* pbuffer, uint32_t writeaddr, uint32_t numbytetowrite)
+{
+    uint8_t data ;
+    uint8_t *data1 ;
+    
+    data1 = &data;
+    
+    for(; numbytetowrite != 0; numbytetowrite--) 
+	{
+        *(uint8_t *) (((uint32_t)0xC0000000) + writeaddr) = *pbuffer++;  
+        writeaddr += 1;
+        
+        *data1 = *(uint8_t*) (((uint32_t)0xC0000000) + 0x0);
+        if(data != 0x55)
+        {
+            __nop();
+        }
+    }
+}
+
 void initcpu(void)
 {
     initClock();
     initPort();
+    setLcdBlState(1);
+    lcd_init();
+    sdram_writebuffer_8((uint8_t*)gImage_Image_RGB565, 0x00000, 0x3FC00);
 }
