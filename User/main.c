@@ -86,7 +86,7 @@ static INT32U p_colors[] =
 };
 
 static INT32U getLcdColor(void)
-{
+{ 
     static INT16U s_index = 0;
     
     if(s_index >= 10)
