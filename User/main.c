@@ -21,7 +21,11 @@
 
 #define SDRAMADDRESS 0xC0000000
 
+
+
 static INT32U p_errReadData = 0;
+
+extern void lcd_clear(uint16_t color);
 
 static void sdramTest(void)
 {
@@ -56,6 +60,43 @@ static void sdramTest(void)
     
     p_errReadData = p_errReadData * 1;
 }
+
+#define LCD_COLOR_WHITE              0xFFFF
+#define LCD_COLOR_BLACK              0x0000
+#define LCD_COLOR_GREY               0xF7DE
+#define LCD_COLOR_BLUE               0x001F
+#define LCD_COLOR_BLUE2              0x051F
+#define LCD_COLOR_RED                0xF800
+#define LCD_COLOR_MAGENTA            0xF81F
+#define LCD_COLOR_GREEN              0x07E0
+#define LCD_COLOR_CYAN               0x7FFF
+#define LCD_COLOR_YELLOW             0xFFE0
+static INT32U p_colors[] = 
+{
+    LCD_COLOR_WHITE  , 
+    LCD_COLOR_BLACK   ,
+    LCD_COLOR_GREY    ,
+    LCD_COLOR_BLUE    ,
+    LCD_COLOR_BLUE2   ,
+    LCD_COLOR_RED     ,
+    LCD_COLOR_MAGENTA ,
+    LCD_COLOR_GREEN   ,
+    LCD_COLOR_CYAN    ,
+    LCD_COLOR_YELLOW    
+};
+
+static INT32U getLcdColor(void)
+{
+    static INT16U s_index = 0;
+    
+    if(s_index >= 10)
+    {
+        s_index = 0;
+    }
+    
+    return p_colors[s_index++];
+}
+
 static __task void start_task(void)
 {
     INT8U data[1];
@@ -70,6 +111,8 @@ static __task void start_task(void)
         delay_ms(500);
         data[0] = 0x00;
         WriteLedPortData(data);
+        
+        lcd_clear(getLcdColor());
     }
 }
 
