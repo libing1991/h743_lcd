@@ -19,88 +19,73 @@
 #include "includes.h"
 #include "rtl.h"
 
-#define SDRAMADDRESS 0xC0000000
+#define TASK_SIZE_MAIN       	512             
+#define TASK_SIZE_MUART	   		400				
+#define TASK_SIZE_GUI	   		500		
 
+#define PRIO_GUI               2
+#define PRIO_TASK_UART           3
+#define PRIO_MUART              5
+#define PRIO_TIMER              11
+#define PRIO_MAIN               10
 
+__align(8) static INT32U p_TimerStk[128];
+__align(8) static INT32U p_GstkUart[TASK_SIZE_MUART];
+__align(8) static INT32U p_GstkMain[TASK_SIZE_MAIN];
 
-static INT32U p_errReadData = 0;
+__align(8) static INT32U p_GstkGui[TASK_SIZE_GUI];
 
-extern void lcd_clear(uint16_t color);
-
-static void sdramTest(void)
+static __task void TaskGui(void)
 {
-    INT32U index;
-    INT32U data;
-    INT32U *datap;
+    delay_ms(500);
     
-    datap = &data;
-    
-    for(index = 0 ; index < (32 * 1024 * 1024 / 4); index += 4)
+    while(1)
     {
-        *(INT32U *)(SDRAMADDRESS + index) = index;
+        lv_task_handler();//lvgl的事务处理
+        delay_ms(5);
     }
-    
-    for(index = 0 ; index < (32 * 1024 * 1024 / 4); index+= 4)
-    {
-        *datap = *(INT32U *)(SDRAMADDRESS + index);
-        
-        if(*datap != index)
-        {
-           p_errReadData ++; 
-        }
-    }
-    
-    if(p_errReadData > 0)
-    {
-        while(1)
-        {
-           p_errReadData ++; 
-        }
-    }
-    
-    p_errReadData = p_errReadData * 1;
 }
 
-#define LCD_COLOR_WHITE              0xFFFF
-#define LCD_COLOR_BLACK              0x0000
-#define LCD_COLOR_GREY               0xF7DE
-#define LCD_COLOR_BLUE               0x001F
-#define LCD_COLOR_BLUE2              0x051F
-#define LCD_COLOR_RED                0xF800
-#define LCD_COLOR_MAGENTA            0xF81F
-#define LCD_COLOR_GREEN              0x07E0
-#define LCD_COLOR_CYAN               0x7FFF
-#define LCD_COLOR_YELLOW             0xFFE0
-static INT32U p_colors[] = 
-{
-    LCD_COLOR_WHITE  , 
-    LCD_COLOR_BLACK   ,
-    LCD_COLOR_GREY    ,
-    LCD_COLOR_BLUE    ,
-    LCD_COLOR_BLUE2   ,
-    LCD_COLOR_RED     ,
-    LCD_COLOR_MAGENTA ,
-    LCD_COLOR_GREEN   ,
-    LCD_COLOR_CYAN    ,
-    LCD_COLOR_YELLOW    
-};
+static __task void TaskMain(void)
+{	
+	
+	while(1)
+	{
+		delay_ms(5);	
+	}
+}
+extern BOOLEAN PendRs232Event(int ms);
 
-static INT32U getLcdColor(void)
-{ 
-    static INT16U s_index = 0;
+static __task void mUartTask(void)
+{
+	delay_ms(500);
     
-    if(s_index >= 10)
-    {
-        s_index = 0;
-    }
-    
-    return p_colors[s_index++];
+	
+	while(1)
+	{
+		delay_ms(5);
+	}
+
+}
+
+
+static __task void timerTASK(void)
+{
+
+	while(1)
+	{
+		delay_ms(5);
+	}
 }
 
 static __task void start_task(void)
 {
     INT8U data[1];
-    initcpu();
+    os_tsk_create_user(TaskMain    , PRIO_MAIN         , &p_GstkMain     , sizeof(p_GstkMain));	
+    os_tsk_create_user(timerTASK    , PRIO_TIMER        , &p_TimerStk        , sizeof(p_TimerStk));	  
+    os_tsk_create_user(mUartTask      , PRIO_TASK_UART     , &p_GstkUart        , sizeof(p_GstkUart));	    
+	
+    os_tsk_create_user(TaskGui    , PRIO_GUI         , &p_GstkGui     , sizeof(p_GstkGui));	
     
     while(1)
     {
@@ -111,8 +96,6 @@ static __task void start_task(void)
         delay_ms(500);
         data[0] = 0x00;
         WriteLedPortData(data);
-        
-        lcd_clear(getLcdColor());
     }
 }
 
@@ -126,16 +109,14 @@ static __task void start_task(void)
 int main(void)
 {
 
-	  uint16_t uicount = 0;
-	  float fcount = 0.0;
-	
-	  //nvic_priority_group_set(NVIC_PRIGROUP_PRE2_SUB2);  // 优先级分组
-	
-//    systick_config();          // 滴答定时器初始化
-//	  led_gpio_config();   			 // led初始化
-//    key_gpio_config(); 				 // key初始化
-//	  usart_gpio_config(9600U);  // 串口0初始化
-//	sdramTest();
+    initcpu();
+
+    lv_init();											//lvgl系统初始化
+    lv_port_disp_init();						//lvgl显示接口初始化,放在lv_init()的后面
+    lv_port_indev_init();						//lvgl输入接口初始化,放在lv_init()的后面
+
+
+    gui_app_start();							//运行例程
     os_sys_init(start_task); 
     while(1) {
 		
@@ -144,5 +125,5 @@ int main(void)
 
 void tick_hook(void)
 {
-
+    lv_tick_inc(1);//lvgl的1ms心跳
 }

@@ -403,6 +403,8 @@ static void initClock(void)
 	rcu_periph_clock_enable(RCU_DMA0);
 	rcu_periph_clock_enable(RCU_DMA1);
 	rcu_periph_clock_enable(RCU_SPI3);
+    
+    
 }
 
 
@@ -605,4 +607,26 @@ void initcpu(void)
     setLcdBlState(1);
     lcd_init();
     sdram_writebuffer_8((uint8_t*)gImage_Image_RGB565, 0x00000, 0x3FC00);
+}
+
+void LCD_Color_Fill(INT16U sx, INT16U sy, INT16U ex, INT16U ey, INT16U *color)
+{
+    uint32_t time_out;
+    uint16_t offline;
+    offline = 480 - (ex - sx + 1);
+
+    IPA_CTL = 0x0;
+    IPA_FMADDR = (uint32_t)color;
+    IPA_DMADDR = (uint32_t)(uint32_t)LCD_FRAME_BUFFER + 2*(480*sy+sx);
+    IPA_FLOFF = 0;
+    IPA_DLOFF = offline;
+    IPA_FPCTL = FOREGROUND_PPF_RGB565;
+    IPA_IMS = (uint32_t)((ex - sx + 1) << 16) | (uint16_t)(ey - sy + 1);
+
+    IPA_CTL |= IPA_CTL_TEN;
+
+    while (IPA_CTL & IPA_CTL_TEN)
+    {
+        if(time_out++ >= 0XFFFFFFFF) break;
+    }
 }
